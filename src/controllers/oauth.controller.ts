@@ -84,6 +84,7 @@ export class OAuthController {
     );
     const idToken = `${dataToSign}.${encodedSignature}`;
 
+    console.log(idToken);
     return c.json({ id_token: idToken });  
   }
 
