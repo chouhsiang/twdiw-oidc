@@ -84,11 +84,7 @@ export class OAuthController {
     );
     const idToken = `${dataToSign}.${encodedSignature}`;
 
-    return new Response(JSON.stringify({ id_token: idToken }), {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    return c.json({ id_token: idToken });  
   }
 
   static async userinfo(c: Context) {
