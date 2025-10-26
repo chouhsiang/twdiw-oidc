@@ -89,20 +89,10 @@
                 const result = await res.json();
                 console.log("驗證結果:", result);
 
-                Swal.fire({
-                    title: result.verifyResult ? "✅ 驗證成功" : "❌ 驗證失敗",
-                    html: `
-            <p>結果描述：${result.resultDescription}</p>
-            <pre style="text-align:left; white-space:pre-wrap;">
-${JSON.stringify(result.data, null, 2)}
-            </pre>
-          `,
-                    icon: result.verifyResult ? "success" : "error",
-                }).then(() => {
-                    // 視窗關閉後重新產生 QRCode
-                    TRANSACTION_ID = crypto.randomUUID();
-                    getQrcode();
-                });
+                const urlParams = new URLSearchParams(window.location.search);
+                const state = urlParams.get('state');
+                const redirect_uri = urlParams.get('redirect_uri');
+                window.location.href = `${redirect_uri}?code=${TRANSACTION_ID}&state=${state}`
             } else {
                 console.log(`尚未有結果 (${res.status})，稍後再試`);
             }
