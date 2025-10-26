@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>數位憑證皮夾驗證端範例</title>
+
+    <!-- Pico.css -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css" />
+
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        main {
+            max-width: 600px;
+            margin: 3rem auto;
+            text-align: center;
+        }
+
+        img {
+            max-width: 100%;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <h2>驗證端產生授權請求 QRCode</h2>
+        <p>請掃描下方 QRCode 進行授權</p>
+
+        <img id="qrcode" alt="QRCode will appear here" />
+    </main>
+
+    <script>
+        let REF_CODE = "";
+        let TRANSACTION_ID = crypto.randomUUID();
+
+        // Fetch VP ID when the page loads
+        async function init() {
+            try {
+                const response = await fetch('/api/twdiwvp/id');
+                if (!response.ok) {
+                    throw new Error('Failed to get VP ID');
+                }
+                const data = await response.json();
+                REF_CODE = data.id;
+                console.log("VP ID loaded:", REF_CODE);
+                // After getting the VP ID, generate the QR code
+                await getQrcode();
+            } catch (error) {
+                console.error('Error initializing:', error);
+                Swal.fire("❌ 初始化錯誤", "無法取得 VP ID", "error");
+            }
+        }
+
+        // Call init when the page loads
+        document.addEventListener('DOMContentLoaded', init);
+
+        async function getQrcode() {
+            if (!REF_CODE) {
+                console.error('VP ID not loaded yet');
+                return;
+            }
+            const url = `/api/twdiwvp/oidvp/qrcode?ref=${REF_CODE}&transactionId=${TRANSACTION_ID}`;
+            const res = await fetch(url);
+            if (!res.ok) {
+                Swal.fire("❌ 無法取得 QRCode", `狀態碼 ${res.status}`, "error");
+                return;
+            }
+            const data = await res.json();
+            document.getElementById("qrcode").src = data.qrcodeImage;
+            console.log("QRCode 已生成:", data);
+        }
+
+        async function checkResult() {
+            const url = `/api/twdiwvp/oidvp/result`;
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ transactionId: TRANSACTION_ID }),
+            });
+
+            if (res.status === 200) {
+                const result = await res.json();
+                console.log("驗證結果:", result);
+
+                Swal.fire({
+                    title: result.verifyResult ? "✅ 驗證成功" : "❌ 驗證失敗",
+                    html: `
+            <p>結果描述：${result.resultDescription}</p>
+            <pre style="text-align:left; white-space:pre-wrap;">
+${JSON.stringify(result.data, null, 2)}
+            </pre>
+          `,
+                    icon: result.verifyResult ? "success" : "error",
+                }).then(() => {
+                    // 視窗關閉後重新產生 QRCode
+                    TRANSACTION_ID = crypto.randomUUID();
+                    getQrcode();
+                });
+            } else {
+                console.log(`尚未有結果 (${res.status})，稍後再試`);
+            }
+        }
+
+        // 初始化流程
+        getQrcode();
+
+        // 每 5 秒查詢一次結果
+        setInterval(checkResult, 5 * 1000);
+    </script>
+</body>
+
+</html>
