@@ -22,23 +22,6 @@ export class OAuthController {
 
     const keyJson = JSON.parse(atob(env.OIDC_KEY));
 
-    const privateKey = await crypto.subtle.importKey(
-      "jwk",
-      keyJson,
-      {
-        name: "RSASSA-PKCS1-v1_5",
-        hash: { name: "SHA-256" },
-      },
-      true,
-      ["sign"]
-    );
-
-    const header = {
-      alg: "RS256",
-      typ: "JWT",
-      kid: "1",
-    };
-
     const payload = {
       email,
       name,
@@ -46,7 +29,7 @@ export class OAuthController {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    const jwt = await sign(payload, keyJson)
+    const jwt = await sign(payload, keyJson, 'RS256')
     return c.json({ id_token: jwt });
   }
 
