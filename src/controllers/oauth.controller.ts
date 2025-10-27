@@ -1,51 +1,26 @@
 import { Context } from "hono";
-
-interface VerifierResponse {
-  data: Array<{
-    claims: {
-      Email: string;
-    };
-  }>;
-}
-
-declare module "hono" {
-  interface ContextVariableMap {
-    OIDC_PRIVATEKEY: string;
-  }
-}
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 
 export class OAuthController {
-  static async authorize(c: Context) {
-    // Your OAuth authorization logic here
-    return c.json({ message: "OAuth authorize endpoint" });
-  }
-
   static async token(c: Context) {
     const { env, req } = c;
 
     const formData = await req.formData();
     const code = formData.get("code");
 
-    // 取得私鑰
-    const oidcKeyBase64 = env.OIDC_KEY;
-    const keyStr = atob(oidcKeyBase64);
-    const keyJson = JSON.parse(keyStr);
+     const raw = await c.env.CODE_KV.get(code);
+    if (!raw) {
+      return c.json({ error: "CODE 已過期或不存在" }, 401);
+    }
 
-    const url = c.env.TWDIW_VP_URL + "/api/oidvp/result";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transactionId: code }),
-    });
 
-    const json: any = await res.json();
-
-    const claims = json[0]?.claims || [];
 
     // 取出 name 和 email
-    const name = claims.find((c: any) => c.ename === "name")?.value;
-    const email = claims.find((c: any) => c.ename === "email")?.value;
+    const data = JSON.parse(raw);
+    const name = data.name;
+    const email = data.email;
 
+    const keyJson = JSON.parse(atob(env.OIDC_KEY));
     const privateKey = await crypto.subtle.importKey(
       "jwk",
       keyJson,
@@ -85,37 +60,9 @@ export class OAuthController {
     const idToken = `${dataToSign}.${encodedSignature}`;
 
     console.log(idToken);
-    return c.json({ id_token: idToken });  
+    return c.json({ id_token: idToken });
   }
 
-  static async userinfo(c: Context) {
-    // Your user info endpoint logic here
-    return c.json({ message: "User info endpoint" });
-  }
-
-  // OIDC Discovery endpoint
-  static async discovery(c: Context) {
-    const baseUrl = new URL(c.req.url).origin;
-
-    return c.json({
-      issuer: baseUrl,
-      authorization_endpoint: `${baseUrl}/api/oauth/authorize`,
-      token_endpoint: `${baseUrl}/api/oauth/token`,
-      userinfo_endpoint: `${baseUrl}/api/oauth/userinfo`,
-      jwks_uri: `${baseUrl}/api/oauth/jwks`,
-      response_types_supported: ["code", "token", "id_token"],
-      subject_types_supported: ["public"],
-      id_token_signing_alg_values_supported: ["RS256"],
-      scopes_supported: ["openid", "profile", "email"],
-      token_endpoint_auth_methods_supported: [
-        "client_secret_basic",
-        "client_secret_post",
-      ],
-      claims_supported: ["sub", "iss", "name", "email"],
-    });
-  }
-
-  // JWKS endpoint
   static async jwks(c: Context) {
     try {
       const { env } = c;
@@ -150,6 +97,106 @@ export class OAuthController {
     } catch (error) {
       console.error("Error generating JWKS:", error);
       return c.json({ error: "Failed to generate JWKS" }, 500);
+    }
+  }
+
+  static async loginQrcode(c: Context) {
+    const { env } = c;
+    const apiUrl = env.TWDIW_VP_URL;
+    const ref = env.TWDIW_VP_ID;
+    const sessionId = crypto.randomUUID();
+    const transactionId = crypto.randomUUID();
+    const url = `${apiUrl}/api/oidvp/qrcode?ref=${ref}&transactionId=${transactionId}`;
+    const res = await fetch(url, {
+      headers: {
+        "Access-Token": env.TWDIW_VP_TOKEN,
+      },
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const qrcodeImage = data.qrcodeImage;
+      const authUri = data.authUri;
+
+      await env.SESSION_KV.put(sessionId, JSON.stringify({ transactionId }), {
+        expirationTtl: 3600,
+      });
+      setCookie(c, "sessionId", sessionId, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+        path: "/",
+        maxAge: 3600,
+      });
+
+      return c.json({ qrcodeImage, authUri });
+    } else {
+      return c.json(
+        {
+          error: true,
+          message: "取得 QR Code 失敗",
+        },
+        500
+      );
+    }
+  }
+
+  static async loginResult(c: Context) {
+    const sessionId = getCookie(c, "sessionId");
+    if (!sessionId) {
+      return c.json({ error: "沒有 sessionId，請先登入" }, 401);
+    }
+
+    const raw = await c.env.SESSION_KV.get(sessionId);
+    if (!raw) {
+      return c.json({ error: "Session 已過期或不存在" }, 401);
+    }
+
+    const session = JSON.parse(raw);
+    const transactionId = session.transactionId;
+
+    const { env } = c;
+    const apiUrl = env.TWDIW_VP_URL;
+
+    const url = `${apiUrl}/api/oidvp/result`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Token": env.TWDIW_VP_TOKEN,
+      },
+      body: JSON.stringify({ transactionId }),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+
+      const email = data.data[0].claims.find(
+        (c: any) => c.ename === "email"
+      )?.value;
+      const name = data.data[0].claims.find(
+        (c: any) => c.ename === "name"
+      )?.value;
+
+      session.email = email;
+      session.name = name;
+      console.log(session);
+      await env.SESSION_KV.put(sessionId, JSON.stringify(session), {
+        expirationTtl: 3600,
+      });
+
+      const code = crypto.randomUUID();
+      await env.CODE_KV.put(code, JSON.stringify(session), {
+        expirationTtl: 60,
+      });
+      return c.json({ code });
+    } else {
+      return c.json(
+        {
+          message: "等待驗證",
+        },
+        500
+      );
     }
   }
 }

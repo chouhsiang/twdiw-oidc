@@ -37,62 +37,31 @@
     </main>
 
     <script>
-        let REF_CODE = "";
-        let TRANSACTION_ID = crypto.randomUUID();
-
-        // Fetch VP ID when the page loads
-        async function init() {
-            try {
-                const response = await fetch('/api/twdiwvp/id');
-                if (!response.ok) {
-                    throw new Error('Failed to get VP ID');
-                }
-                const data = await response.json();
-                REF_CODE = data.id;
-                console.log("VP ID loaded:", REF_CODE);
-                // After getting the VP ID, generate the QR code
-                await getQrcode();
-            } catch (error) {
-                console.error('Error initializing:', error);
-                Swal.fire("❌ 初始化錯誤", "無法取得 VP ID", "error");
-            }
-        }
-
-        // Call init when the page loads
-        document.addEventListener('DOMContentLoaded', init);
+        let transactionId;
 
         async function getQrcode() {
-            if (!REF_CODE) {
-                console.error('VP ID not loaded yet');
-                return;
-            }
-            const url = `/api/twdiwvp/oidvp/qrcode?ref=${REF_CODE}&transactionId=${TRANSACTION_ID}`;
-            const res = await fetch(url);
+            const res = await fetch('/api/oauth/login/qrcode');
             if (!res.ok) {
                 Swal.fire("❌ 無法取得 QRCode", `狀態碼 ${res.status}`, "error");
                 return;
             }
             const data = await res.json();
             document.getElementById("qrcode").src = data.qrcodeImage;
+            transactionId = data.transactionId;
             console.log("QRCode 已生成:", data);
         }
 
         async function checkResult() {
-            const url = `/api/twdiwvp/oidvp/result`;
-            const res = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ transactionId: TRANSACTION_ID }),
-            });
+            const res = await fetch('/api/oauth/login/result');
 
             if (res.status === 200) {
                 const result = await res.json();
-                console.log("驗證結果:", result);
+                const code = result.code;
 
                 const urlParams = new URLSearchParams(window.location.search);
                 const state = urlParams.get('state');
                 const redirect_uri = urlParams.get('redirect_uri');
-                window.location.href = `${redirect_uri}?code=${TRANSACTION_ID}&state=${state}`
+                window.location.href = `${redirect_uri}?code=${code}&state=${state}`
             } else {
                 console.log(`尚未有結果 (${res.status})，稍後再試`);
             }

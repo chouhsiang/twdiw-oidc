@@ -3,11 +3,10 @@ import { OAuthController } from '../controllers/oauth.controller';
 
 const oauthRouter = new Hono();
 
-oauthRouter.get('/authorize', OAuthController.authorize);
 oauthRouter.post('/token', OAuthController.token);
-oauthRouter.get('/userinfo', OAuthController.userinfo);
-
 oauthRouter.get('/jwks', OAuthController.jwks);
+oauthRouter.get('/login/qrcode', OAuthController.loginQrcode);
+oauthRouter.get('/login/result', OAuthController.loginResult);
 
 
 export { oauthRouter };
