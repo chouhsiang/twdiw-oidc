@@ -1,5 +1,7 @@
 import { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { sign } from 'hono/jwt'
+
 
 export class OAuthController {
   static async token(c: Context) {
@@ -18,9 +20,7 @@ export class OAuthController {
     const name = data.name;
     const email = data.email;
 
-    const oidcKeyBase64 = env.OIDC_KEY;
-    const keyStr = atob(oidcKeyBase64);
-    const keyJson = JSON.parse(keyStr);
+    const keyJson = JSON.parse(atob(env.OIDC_KEY));
 
     const privateKey = await crypto.subtle.importKey(
       "jwk",
@@ -46,22 +46,8 @@ export class OAuthController {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    // 產生 id_token
-    const encodedHeader = btoa(JSON.stringify(header));
-    const encodedPayload = btoa(JSON.stringify(payload));
-    const dataToSign = `${encodedHeader}.${encodedPayload}`;
-    const signature = await crypto.subtle.sign(
-      { name: "RSASSA-PKCS1-v1_5" },
-      privateKey,
-      new TextEncoder().encode(dataToSign)
-    );
-    const encodedSignature = btoa(
-      String.fromCharCode(...new Uint8Array(signature))
-    );
-    const idToken = `${dataToSign}.${encodedSignature}`;
-
-    console.log(idToken);
-    return c.json({ id_token: idToken });
+    const jwt = await sign(payload, keyJson)
+    return c.json({ id_token: jwt });
   }
 
   static async jwks(c: Context) {
