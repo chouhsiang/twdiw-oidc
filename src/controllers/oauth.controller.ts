@@ -8,19 +8,21 @@ export class OAuthController {
     const formData = await req.formData();
     const code = formData.get("code");
 
-     const raw = await c.env.CODE_KV.get(code);
+    const raw = await c.env.CODE_KV.get(code);
     if (!raw) {
       return c.json({ error: "CODE 已過期或不存在" }, 401);
     }
-
-
 
     // 取出 name 和 email
     const data = JSON.parse(raw);
     const name = data.name;
     const email = data.email;
 
-    const keyJson = JSON.parse(atob(env.OIDC_KEY));
+    const keyJson = JSON.parse(
+      new TextDecoder().decode(
+        Uint8Array.from(atob(env.OIDC_KEY), (c) => c.charCodeAt(0))
+      )
+    );
     const privateKey = await crypto.subtle.importKey(
       "jwk",
       keyJson,
