@@ -18,11 +18,10 @@ export class OAuthController {
     const name = data.name;
     const email = data.email;
 
-    const keyJson = JSON.parse(
-      new TextDecoder().decode(
-        Uint8Array.from(atob(env.OIDC_KEY), (c) => c.charCodeAt(0))
-      )
-    );
+    const oidcKeyBase64 = env.OIDC_KEY;
+    const keyStr = atob(oidcKeyBase64);
+    const keyJson = JSON.parse(keyStr);
+
     const privateKey = await crypto.subtle.importKey(
       "jwk",
       keyJson,
