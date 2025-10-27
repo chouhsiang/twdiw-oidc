@@ -17,9 +17,6 @@
 	"kv_namespaces": [
 		{
 		"binding": "CODE_KV"
-		},
-		{
-		"binding": "SESSION_KV"
 		}
 	],
 	/**

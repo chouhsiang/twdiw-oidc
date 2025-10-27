@@ -38,23 +38,22 @@
     </main>
 
     <script>
-        let transactionId;
+        let transactionId = crypto.randomUUID();
 
         async function getQrcode() {
-            const res = await fetch('/api/oauth/login/qrcode');
+            const res = await fetch(`/api/oauth/login/qrcode?transactionId=${transactionId}`);
             if (!res.ok) {
                 Swal.fire("❌ 無法取得 QRCode", `狀態碼 ${res.status}`, "error");
                 return;
             }
             const data = await res.json();
             document.getElementById("qrcode").src = data.qrcodeImage;
-            transactionId = data.transactionId;
             document.getElementById("authUri").href = data.authUri;
             console.log("QRCode 已生成:", data);
         }
 
         async function checkResult() {
-            const res = await fetch('/api/oauth/login/result');
+            const res = await fetch(`/api/oauth/login/result?transactionId=${transactionId}`);
 
             if (res.status === 200) {
                 const result = await res.json();

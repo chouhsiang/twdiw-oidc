@@ -1,7 +1,6 @@
 import { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { sign } from 'hono/jwt'
-
+import { sign } from "hono/jwt";
 
 export class OAuthController {
   static async token(c: Context) {
@@ -29,7 +28,7 @@ export class OAuthController {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    const jwt = await sign(payload, keyJson, 'RS256');
+    const jwt = await sign(payload, keyJson, "RS256");
     console.log(jwt);
     return c.json({ id_token: jwt });
   }
@@ -75,8 +74,7 @@ export class OAuthController {
     const { env } = c;
     const apiUrl = env.TWDIW_VP_URL;
     const ref = env.TWDIW_VP_ID;
-    const sessionId = crypto.randomUUID();
-    const transactionId = crypto.randomUUID();
+    const transactionId = c.req.query("transactionId");
     const url = `${apiUrl}/api/oidvp/qrcode?ref=${ref}&transactionId=${transactionId}`;
     const res = await fetch(url, {
       headers: {
@@ -88,17 +86,6 @@ export class OAuthController {
       const data = (await res.json()) as any;
       const qrcodeImage = data.qrcodeImage;
       const authUri = data.authUri;
-
-      await env.SESSION_KV.put(sessionId, JSON.stringify({ transactionId }), {
-        expirationTtl: 3600,
-      });
-      setCookie(c, "sessionId", sessionId, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "Lax",
-        path: "/",
-        maxAge: 3600,
-      });
 
       return c.json({ qrcodeImage, authUri });
     } else {
@@ -113,21 +100,9 @@ export class OAuthController {
   }
 
   static async loginResult(c: Context) {
-    const sessionId = getCookie(c, "sessionId");
-    if (!sessionId) {
-      return c.json({ error: "沒有 sessionId，請先登入" }, 401);
-    }
-
-    const raw = await c.env.SESSION_KV.get(sessionId);
-    if (!raw) {
-      return c.json({ error: "Session 已過期或不存在" }, 401);
-    }
-
-    const session = JSON.parse(raw);
-    const transactionId = session.transactionId;
-
-    const { env } = c;
+    const { env, req } = c;
     const apiUrl = env.TWDIW_VP_URL;
+    const transactionId = req.query("transactionId");
 
     const url = `${apiUrl}/api/oidvp/result`;
     const res = await fetch(url, {
@@ -149,15 +124,26 @@ export class OAuthController {
         (c: any) => c.ename === "name"
       )?.value;
 
-      session.email = email;
-      session.name = name;
-      console.log(session);
-      await env.SESSION_KV.put(sessionId, JSON.stringify(session), {
-        expirationTtl: 3600,
+      const payload = {
+        email,
+        name,
+        exp: Math.floor(Date.now() / 1000) + 60 * 60,
+        iat: Math.floor(Date.now() / 1000),
+      };
+
+      const keyJson = JSON.parse(atob(env.OIDC_KEY));
+      const jwt = await sign(payload, keyJson, "RS256");
+
+      setCookie(c, "jwt", jwt, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+        path: "/",
+        maxAge: 60 * 60,
       });
 
       const code = crypto.randomUUID();
-      await env.CODE_KV.put(code, JSON.stringify(session), {
+      await env.CODE_KV.put(code, JSON.stringify(payload), {
         expirationTtl: 60,
       });
       return c.json({ code });
@@ -167,6 +153,69 @@ export class OAuthController {
           message: "等待驗證",
         },
         500
+      );
+    }
+  }
+
+  static async registerQrcode(c: Context) {
+    const { env, req } = c;
+    const body = await req.json();
+    const apiUrl = env.TWDIW_VC_URL;
+    const url = `${apiUrl}/api/qrcode/data`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Access-Token": env.TWDIW_VC_TOKEN,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        vcUid: env.TWDIW_VC_ID,
+        fields: [
+          { ename: "name", content: body.name },
+          { ename: "email", content: body.email },
+        ],
+      }),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const transactionId = data.transactionId;
+      const qrCode = data.qrCode;
+      const deepLink = data.deepLink;
+
+      return c.json({ transactionId, qrCode, deepLink });
+    } else {
+      return c.json(
+        {
+          error: true,
+          message: "取得 QR Code 失敗",
+        },
+        500
+      );
+    }
+  }
+
+  static async registerResult(c: Context) {
+    const { env, req } = c;
+    const apiUrl = env.TWDIW_VC_URL;
+    const transactionId = req.query("transactionId");
+    const url = `${apiUrl}/api/credential/nonce/${transactionId}`;
+    const res = await fetch(url, {
+      headers: {
+        "Access-Token": env.TWDIW_VC_TOKEN,
+      },
+    });
+    const data = (await res.json()) as any;
+
+    if (res.ok) {
+      return c.json(data);
+    } else {
+      return c.json(
+        {
+          error: true,
+          message: "等待登入",
+        },
+        400
       );
     }
   }
