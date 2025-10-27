@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>數位憑證皮夾驗證端範例</title>
+    <title>數位憑證皮夾 OIDC 登入</title>
 
     <!-- Pico.css -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css" />
@@ -30,10 +30,11 @@
 
 <body>
     <main>
-        <h2>驗證端產生授權請求 QRCode</h2>
-        <p>請掃描下方 QRCode 進行授權</p>
+        <h2>數位憑證皮夾 單一登入</h2>
+        <p>請註冊<a href="/oauth/register/email" target="_blank">電子信箱卡</a>，並以數位憑證皮夾App掃描驗證</p>
 
         <img id="qrcode" alt="QRCode will appear here" />
+        <p><a href="" id="authUri">開啟數位皮夾App驗證</a></p>
     </main>
 
     <script>
@@ -48,6 +49,7 @@
             const data = await res.json();
             document.getElementById("qrcode").src = data.qrcodeImage;
             transactionId = data.transactionId;
+            document.getElementById("authUri").href = data.authUri;
             console.log("QRCode 已生成:", data);
         }
 
