@@ -29,7 +29,8 @@ export class OAuthController {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    const jwt = await sign(payload, keyJson, 'RS256')
+    const jwt = await sign(payload, keyJson, 'RS256');
+    console.log(jwt);
     return c.json({ id_token: jwt });
   }
 
